@@ -1,53 +1,133 @@
-// The Standup That Never Ends
+// The Standup That Never Ends — one-line office joke
 // make.fun bounty: u-pucuys-one-line-office-joke-24-hour-sprint-aaf86162
-// Program (Node 22, no dependencies, no network, deterministic):
-// writes one line — a joke about office standups — to /output/entry.txt
-// and validates it against the gate: UTF-8 text, 1-200 characters,
-// exactly one sentence, a single line, no leading/trailing whitespace,
-// and the file on disk must read back byte-identical (no trailing newline).
+// Node 22, no dependencies, no network, deterministic.
+// The program writes the entry — one joke, one line, 125 characters —
+// to /output/entry.txt, then proves the write before it exits.
 
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-const ENTRY =
+// ---------------------------------------------------------------------------
+// The entry
+// ---------------------------------------------------------------------------
+
+const JOKE =
   "Our 15-minute daily standup has now lasted three years, and the intern who joined it is retiring from it as a senior manager.";
 
-const MAX_CHARS = 200;
-const OUT_PATH = "/output/entry.txt";
+const GATE = {
+  minChars: 1,
+  maxChars: 200,
+  outPath: "/output/entry.txt",
+  outDir: "/output",
+} as const;
 
-function checkEntry(text: string): string {
-  if (text.length < 1 || text.length > MAX_CHARS) {
-    throw new Error(`entry is ${text.length} characters, must be 1-${MAX_CHARS}`);
+// ---------------------------------------------------------------------------
+// The gate: each rule is a small named check, run in order
+// ---------------------------------------------------------------------------
+
+type Rule = {
+  name: string;
+  check: (text: string) => void;
+};
+
+const RULES: Rule[] = [
+  {
+    name: "length",
+    check: (text) => {
+      if (text.length < GATE.minChars || text.length > GATE.maxChars) {
+        throw new Error(
+          `entry is ${text.length} characters, must be ${GATE.minChars}-${GATE.maxChars}`,
+        );
+      }
+    },
+  },
+  {
+    name: "no-surrounding-whitespace",
+    check: (text) => {
+      if (text !== text.trim()) {
+        throw new Error("entry must have no leading or trailing whitespace");
+      }
+    },
+  },
+  {
+    name: "single-line",
+    check: (text) => {
+      if (/[\r\n]/.test(text)) {
+        throw new Error("entry must be a single line");
+      }
+    },
+  },
+  {
+    name: "no-double-spaces",
+    check: (text) => {
+      if (/  /.test(text)) {
+        throw new Error("entry must not contain double spaces");
+      }
+    },
+  },
+  {
+    name: "exactly-one-sentence",
+    check: (text) => {
+      // One terminal period, at the very end, and no other terminator.
+      const terminators = (text.match(/[.!?]/g) ?? []).length;
+      if (terminators !== 1 || !text.endsWith(".")) {
+        throw new Error("entry must be exactly one sentence ending with a period");
+      }
+    },
+  },
+  {
+    name: "non-blank",
+    check: (text) => {
+      if (text.trim().length === 0) {
+        throw new Error("entry must not be only whitespace");
+      }
+    },
+  },
+];
+
+function validate(text: string): void {
+  for (const rule of RULES) {
+    rule.check(text);
   }
-  if (text !== text.trim()) {
-    throw new Error("entry must have no leading or trailing whitespace");
-  }
-  if (/[\r\n]/.test(text)) {
-    throw new Error("entry must be a single line");
-  }
-  if (/  /.test(text)) {
-    throw new Error("entry must not contain double spaces");
-  }
-  // Exactly one sentence: a single terminal period, at the very end.
-  const terminators = (text.match(/[.!?]/g) ?? []).length;
-  if (terminators !== 1 || !text.endsWith(".")) {
-    throw new Error("entry must be exactly one sentence ending with a period");
-  }
-  return text;
 }
 
-function main(): void {
-  const text = checkEntry(ENTRY);
-  mkdirSync("/output", { recursive: true });
-  writeFileSync(OUT_PATH, text, "utf8");
-  const back = readFileSync(OUT_PATH, "utf8");
+// ---------------------------------------------------------------------------
+// Write, read back, and report
+// ---------------------------------------------------------------------------
+
+function writeEntry(text: string): void {
+  mkdirSync(GATE.outDir, { recursive: true });
+  writeFileSync(GATE.outPath, text, "utf8");
+}
+
+function verifyRoundTrip(text: string): void {
+  const back = readFileSync(GATE.outPath, "utf8");
   if (back !== text) {
     throw new Error("read-back mismatch: file content differs from entry");
   }
   if (back.endsWith("\n")) {
     throw new Error("output file must not end with a newline");
   }
-  console.log(`wrote ${OUT_PATH} (${text.length} characters)`);
+  // Second pass: the text on disk must pass the same gate on its own,
+  // so a write that silently altered the entry cannot slip through.
+  validate(back);
+}
+
+function report(text: string): void {
+  const words = text.split(" ").length;
+  const comma = text.indexOf(",");
+  const setup = comma === -1 ? text : text.slice(0, comma);
+  const punchline = comma === -1 ? "" : text.slice(comma + 1).trim();
+  console.log(`wrote ${GATE.outPath} (${text.length} characters, ${words} words)`);
+  console.log(`setup (${setup.length} chars): ${setup}`);
+  console.log(`punchline (${punchline.length} chars): ${punchline}`);
   console.log(text);
+}
+
+function main(): void {
+  validate(JOKE);
+  writeEntry(JOKE);
+  verifyRoundTrip(JOKE);
+  report(JOKE);
 }
 
 main();
